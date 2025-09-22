@@ -125,6 +125,8 @@ void Error_Handler(void);
 #include "stm32f7xx_hal.h"
 
 
+
+
 /* USER CODE BEGIN Private defines */
 
 /* USER CODE END Private defines */

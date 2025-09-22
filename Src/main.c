@@ -1,17 +1,30 @@
 #include "main.h"
+#include <stdlib.h>
+#include <time.h>
 
-/* Private function prototypes -----------------------------------------------*/
+/* Function Prototypes */
 static void MX_GPIO_Init(void);
+int generateRandomNumber(int min, int max);
 
 /* Helper Functions */
-void setLights(GPIO_PinState red, GPIO_PinState yellow, GPIO_PinState green) {
-    HAL_GPIO_WritePin(LED_GPIO_Port, LED_RED_Pin, red);
-    HAL_GPIO_WritePin(LED_GPIO_Port, LED_YELLOW_Pin, yellow);
-    HAL_GPIO_WritePin(LED_GPIO_Port, LED_GREEN_Pin, green);
+int generateRandomNumber(int min, int max) {
+    return min + (rand() % (max - min + 1));
 }
 
-uint8_t isButtonPressed() {
-    return HAL_GPIO_ReadPin(BUTTON_GPIO_Port, BUTTON_Pin) == GPIO_PIN_SET;
+uint8_t isPlayer1Pressed() {
+    return HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_13) == GPIO_PIN_SET; // USER button
+}
+
+uint8_t isPlayer2Pressed() {
+    return HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_1) == GPIO_PIN_SET;
+}
+
+void showWinner(uint8_t player) {
+    if (player == 1) {
+        HAL_GPIO_WritePin(GPIOB, LD1_Pin, GPIO_PIN_SET); // Player 1 wins
+    } else if (player == 2) {
+        HAL_GPIO_WritePin(GPIOB, LD2_Pin, GPIO_PIN_SET); // Player 2 wins
+    }
 }
 
 /* Main Application */
@@ -19,39 +32,43 @@ int main(void)
 {
     HAL_Init();
     MX_GPIO_Init();
+    srand(HAL_GetTick()); // Seed RNG with system tick
 
-    while (1)
-    {
-        // RED
-        setLights(GPIO_PIN_SET, GPIO_PIN_RESET, GPIO_PIN_RESET);
-        uint32_t redTime = 20000; // 20s
-        if (isButtonPressed()) {
-            redTime += 10000; // extend RED by 10s
+    // Wait random time before reflex LED
+    int waitTime = generateRandomNumber(1000, 20000); // 1–20s
+    uint32_t elapsed = 0;
+    uint8_t winner = 0;
+
+    while (elapsed < waitTime) {
+        if (isPlayer1Pressed()) {
+            winner = 2; // Player 1 pressed too early → Player 2 wins
+            break;
         }
-        HAL_Delay(redTime);
+        if (isPlayer2Pressed()) {
+            winner = 1; // Player 2 pressed too early → Player 1 wins
+            break;
+        }
+        HAL_Delay(10);
+        elapsed += 10;
+    }
 
-        // RED + YELLOW
-        setLights(GPIO_PIN_SET, GPIO_PIN_SET, GPIO_PIN_RESET);
-        HAL_Delay(5000); // 5s
+    if (winner == 0) {
+        // Reflex LED ON
+        HAL_GPIO_WritePin(GPIOB, LD3_Pin, GPIO_PIN_SET);
 
-        // GREEN
-        setLights(GPIO_PIN_RESET, GPIO_PIN_RESET, GPIO_PIN_SET);
-        uint32_t greenTime = 10000; // 10s
-        uint32_t elapsed = 0;
-        while (elapsed < greenTime) {
-            if (isButtonPressed()) {
-                // GREEN + YELLOW
-                setLights(GPIO_PIN_RESET, GPIO_PIN_SET, GPIO_PIN_SET);
-                HAL_Delay(5000);
-                // Switch to RED
-                setLights(GPIO_PIN_SET, GPIO_PIN_RESET, GPIO_PIN_RESET);
-                HAL_Delay(20000);
-                break;
+        // Wait for first valid press
+        while (winner == 0) {
+            if (isPlayer1Pressed()) {
+                winner = 1;
+            } else if (isPlayer2Pressed()) {
+                winner = 2;
             }
-            HAL_Delay(100);
-            elapsed += 100;
         }
     }
+
+    showWinner(winner);
+
+    while (1); // Game ends, wait for manual reset
 }
 
 /* GPIO Initialization */
@@ -62,16 +79,16 @@ static void MX_GPIO_Init(void)
     __HAL_RCC_GPIOB_CLK_ENABLE();
     __HAL_RCC_GPIOC_CLK_ENABLE();
 
-    // LEDs: PB0, PB1, PB2
-    GPIO_InitStruct.Pin = LED_RED_Pin | LED_YELLOW_Pin | LED_GREEN_Pin;
+    // LEDs: LD1 (PB0), LD2 (PB7), LD3 (PB14)
+    GPIO_InitStruct.Pin = LD1_Pin | LD2_Pin | LD3_Pin;
     GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
     GPIO_InitStruct.Pull = GPIO_NOPULL;
     GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-    HAL_GPIO_Init(LED_GPIO_Port, &GPIO_InitStruct);
+    HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
-    // Button: PC13
-    GPIO_InitStruct.Pin = BUTTON_Pin;
+    // Buttons: BTN1 (PC0), BTN2 (PC1)
+    GPIO_InitStruct.Pin = GPIO_PIN_0 | GPIO_PIN_1;
     GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
     GPIO_InitStruct.Pull = GPIO_PULLDOWN;
-    HAL_GPIO_Init(BUTTON_GPIO_Port, &GPIO_InitStruct);
+    HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
 }
